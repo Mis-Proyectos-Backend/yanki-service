@@ -1,7 +1,6 @@
 package com.bank.yanki.controller;
 
 import com.bank.yanki.dto.AssociateDebitCardRequest;
-import com.bank.yanki.dto.TransferRequest;
 import com.bank.yanki.dto.YankiRequest;
 import com.bank.yanki.dto.YankiTransferRequest;
 import com.bank.yanki.model.YankiWallet;

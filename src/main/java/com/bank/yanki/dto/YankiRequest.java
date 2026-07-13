@@ -4,9 +4,11 @@ import com.bank.yanki.enums.DocumentType;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import lombok.Builder;
 import lombok.Data;
 
 @Data
+@Builder
 public class YankiRequest {
 
     @NotNull(message = "Document type is required")
