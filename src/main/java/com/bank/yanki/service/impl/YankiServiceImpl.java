@@ -29,7 +29,7 @@ public class YankiServiceImpl implements YankiService {
 
     @Override
     public Mono<YankiWallet> create(YankiRequest request) {
-
+        System.out.println("request: " + request.getCustomerId());
         return repository.existsByPhoneNumber(request.getPhoneNumber())
                 .flatMap(exists -> {
 
@@ -39,6 +39,7 @@ public class YankiServiceImpl implements YankiService {
 
                     YankiWallet wallet =
                             YankiWallet.builder()
+                                    .customerId(request.getCustomerId())
                                     .documentType(request.getDocumentType())
                                     .documentNumber(request.getDocumentNumber())
                                     .phoneNumber(request.getPhoneNumber())
@@ -46,7 +47,7 @@ public class YankiServiceImpl implements YankiService {
                                     .email(request.getEmail())
                                     .createdAt(LocalDateTime.now())
                                     .build();
-
+                    System.out.println("YankiWallet: " + wallet.getCustomerId());
                     return repository.save(wallet);
 
                 });
@@ -85,6 +86,7 @@ public class YankiServiceImpl implements YankiService {
 
     }
 
+    @Override
     public Mono<Void> transfer(YankiTransferRequest request) {
 
         return Mono.zip(getWalletWithCard(request.getOriginPhone(), "Sender"), getWalletWithCard(request.getDestinationPhone(), "Receiver"))

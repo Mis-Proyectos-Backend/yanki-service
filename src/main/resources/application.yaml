@@ -7,18 +7,17 @@ server:
 spring:
   application:
     name: yanki-service
+  kafka:
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        spring.json.add.type.headers: false
 
   data:
     mongodb:
       uri: mongodb://localhost:27017/yankidb
       auto-index-creation: true
-  spring:
-    kafka:
-      bootstrap-servers: localhost:9092
-      producer:
-        key-serializer: org.apache.kafka.common.serialization.StringSerializer
-        value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
-
 
 eureka:
   client:
@@ -30,9 +29,25 @@ eureka:
   instance:
     hostname: localhost
 
-
 management:
   endpoints:
     web:
       exposure:
         include: "*"
+
+resilience4j:
+  circuitbreaker:
+    instances:
+
+      accountService:
+        slidingWindowSize: 5
+        minimumNumberOfCalls: 5
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10s
+        permittedNumberOfCallsInHalfOpenState: 3
+
+  timelimiter:
+    instances:
+
+      accountService:
+        timeoutDuration: 2s

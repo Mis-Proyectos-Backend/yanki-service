@@ -11,6 +11,9 @@ import lombok.Data;
 @Builder
 public class YankiRequest {
 
+    @NotBlank(message = "customerId type is required")
+    private String customerId;
+
     @NotNull(message = "Document type is required")
     private DocumentType documentType;
 

@@ -34,6 +34,7 @@ class YankiControllerTest {
 
         YankiRequest request =
                 YankiRequest.builder()
+                        .customerId("123456")
                         .documentType(DocumentType.DNI)
                         .documentNumber("12345678")
                         .phoneNumber("999111222")
@@ -44,6 +45,7 @@ class YankiControllerTest {
         YankiWallet wallet =
                 YankiWallet.builder()
                         .id("1")
+                        .customerId("123456")
                         .documentType(DocumentType.DNI)
                         .documentNumber("12345678")
                         .phoneNumber("999111222")
