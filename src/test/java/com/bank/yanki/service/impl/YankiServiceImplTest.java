@@ -1,11 +1,14 @@
 package com.bank.yanki.service.impl;
 
+import com.bank.yanki.client.DebitCardClient;
+import com.bank.yanki.client.dto.DebitCardResponse;
 import com.bank.yanki.dto.AssociateDebitCardRequest;
 import com.bank.yanki.dto.YankiRequest;
 import com.bank.yanki.dto.YankiTransferRequest;
 import com.bank.yanki.enums.DocumentType;
-import com.bank.yanki.event.YankiPaymentEvent;
-import com.bank.yanki.kafka.producer.YankiPaymentProducer;
+import com.bank.yanki.enums.PaymentMethod;
+import com.bank.yanki.event.AccountTransferEvent;
+import com.bank.yanki.kafka.producer.AccountTransferProducer;
 import com.bank.yanki.model.YankiWallet;
 import com.bank.yanki.repository.YankiRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,7 +29,8 @@ import static org.mockito.Mockito.*;
 class YankiServiceImplTest {
 
     private YankiRepository repository;
-    private YankiPaymentProducer producer;
+    private AccountTransferProducer producer;
+    private DebitCardClient debitCardClient;
     private YankiServiceImpl service;
 
     @BeforeEach
@@ -34,10 +38,13 @@ class YankiServiceImplTest {
 
         repository = mock(YankiRepository.class);
 
-        producer = mock(YankiPaymentProducer.class);
+        producer = mock(AccountTransferProducer.class);
+
+        debitCardClient = mock(DebitCardClient.class);
 
         service = new YankiServiceImpl(
                 repository,
+                debitCardClient,
                 producer
         );
     }
@@ -208,7 +215,20 @@ class YankiServiceImplTest {
         YankiWallet receiver =
                 YankiWallet.builder()
                         .phoneNumber("999333444")
+                        .debitCardId("card002")
                         .build();
+
+        DebitCardResponse senderCard = DebitCardResponse.builder()
+                .id("card001")
+                .primaryAccountId("account001")
+                .build();
+
+        DebitCardResponse receiverCard = DebitCardResponse.builder()
+                .id("card002")
+                .primaryAccountId("account002")
+                .build();
+        receiverCard.setId("card002");
+        receiverCard.setPrimaryAccountId("account002");
 
         when(repository.findByPhoneNumber("999111222"))
                 .thenReturn(Mono.just(sender));
@@ -216,20 +236,30 @@ class YankiServiceImplTest {
         when(repository.findByPhoneNumber("999333444"))
                 .thenReturn(Mono.just(receiver));
 
+        when(debitCardClient.findById("card001"))
+                .thenReturn(Mono.just(senderCard));
+
+        when(debitCardClient.findById("card002"))
+                .thenReturn(Mono.just(receiverCard));
+
+        when(producer.sendTransfer(any(AccountTransferEvent.class)))
+                .thenReturn(Mono.empty());
+
         StepVerifier.create(service.transfer(request))
                 .verifyComplete();
 
-        ArgumentCaptor<YankiPaymentEvent> captor =
-                ArgumentCaptor.forClass(YankiPaymentEvent.class);
+        ArgumentCaptor<AccountTransferEvent> captor =
+                ArgumentCaptor.forClass(AccountTransferEvent.class);
 
-        verify(producer).sendPayment(captor.capture());
+        verify(producer).sendTransfer(captor.capture());
 
-        YankiPaymentEvent event = captor.getValue();
+        AccountTransferEvent event = captor.getValue();
 
-        assertEquals("card001", event.getDebitCardId());
-        assertEquals("999333444", event.getDestinationPhone());
+        assertEquals("account001", event.getSourceAccountId());
+        assertEquals("account002", event.getDestinationAccountId());
         assertEquals(BigDecimal.valueOf(100), event.getAmount());
         assertEquals("Payment", event.getDescription());
+        assertEquals(PaymentMethod.YANKI, event.getPaymentMethod());
     }
 
     @Test
@@ -238,16 +268,26 @@ class YankiServiceImplTest {
         YankiTransferRequest request =
                 YankiTransferRequest.builder()
                         .originPhone("999111222")
+                        .destinationPhone("999333444")
                         .build();
 
         when(repository.findByPhoneNumber("999111222"))
                 .thenReturn(Mono.empty());
 
+        // Mono.zip() también crea el Mono del destinatario
+        when(repository.findByPhoneNumber("999333444"))
+                .thenReturn(Mono.empty());
+
         StepVerifier.create(service.transfer(request))
-                .expectError(RuntimeException.class)
+                .expectErrorMatches(error ->
+                        error instanceof ResponseStatusException &&
+                                ((ResponseStatusException) error).getStatusCode() == HttpStatus.NOT_FOUND &&
+                                error.getMessage().contains("Sender wallet not found")
+                )
                 .verify();
 
-        verify(producer, never()).sendPayment(any());
+        verify(producer, never()).sendTransfer(any(AccountTransferEvent.class));
+        verifyNoInteractions(debitCardClient);
     }
 
     @Test
@@ -256,6 +296,7 @@ class YankiServiceImplTest {
         YankiTransferRequest request =
                 YankiTransferRequest.builder()
                         .originPhone("999111222")
+                        .destinationPhone("999333444")
                         .build();
 
         YankiWallet sender =
@@ -264,13 +305,17 @@ class YankiServiceImplTest {
                         .build();
 
         when(repository.findByPhoneNumber("999111222"))
-                .thenReturn(Mono.just(sender));
+                .thenReturn(Mono.empty());
+
+        // Mono.zip() también crea el Mono del destinatario
+        when(repository.findByPhoneNumber("999333444"))
+                .thenReturn(Mono.empty());
 
         StepVerifier.create(service.transfer(request))
                 .expectError(RuntimeException.class)
                 .verify();
 
-        verify(producer, never()).sendPayment(any());
+        verify(producer, never()).sendTransfer(any());
     }
 
     @Test
@@ -299,7 +344,7 @@ class YankiServiceImplTest {
                 .expectError(RuntimeException.class)
                 .verify();
 
-        verify(producer, never()).sendPayment(any());
+        verify(producer, never()).sendTransfer(any());
     }
 
     @Test
@@ -312,5 +357,53 @@ class YankiServiceImplTest {
                 .verifyComplete();
 
         verify(repository).deleteById("1");
+    }
+
+    @Test
+    void transfer_shouldFailWhenWalletHasNoDebitCard() {
+
+        YankiTransferRequest request =
+                YankiTransferRequest.builder()
+                        .originPhone("999111222")
+                        .destinationPhone("999333444")
+                        .amount(BigDecimal.valueOf(100))
+                        .description("Payment")
+                        .build();
+
+
+        YankiWallet sender =
+                YankiWallet.builder()
+                        .phoneNumber("999111222")
+                        .debitCardId(null)
+                        .build();
+
+
+        when(repository.findByPhoneNumber("999111222"))
+                .thenReturn(Mono.just(sender));
+
+
+        // IMPORTANTE: Mono.zip también evalúa el receiver
+        when(repository.findByPhoneNumber("999333444"))
+                .thenReturn(Mono.empty());
+
+
+        StepVerifier.create(service.transfer(request))
+                .expectErrorMatches(error ->
+                        error instanceof ResponseStatusException &&
+                                ((ResponseStatusException) error)
+                                        .getStatusCode()
+                                        .equals(HttpStatus.BAD_REQUEST) &&
+                                error.getMessage()
+                                        .contains("Sender has no debit card")
+                )
+                .verify();
+
+
+        verify(producer, never())
+                .sendTransfer(any(AccountTransferEvent.class));
+
+
+        verifyNoInteractions(debitCardClient);
+
     }
 }

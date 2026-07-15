@@ -1,10 +1,12 @@
 package com.bank.yanki.service.impl;
 
+import com.bank.yanki.client.DebitCardClient;
 import com.bank.yanki.dto.AssociateDebitCardRequest;
 import com.bank.yanki.dto.YankiRequest;
 import com.bank.yanki.dto.YankiTransferRequest;
-import com.bank.yanki.event.YankiPaymentEvent;
-import com.bank.yanki.kafka.producer.YankiPaymentProducer;
+import com.bank.yanki.enums.PaymentMethod;
+import com.bank.yanki.event.AccountTransferEvent;
+import com.bank.yanki.kafka.producer.AccountTransferProducer;
 import com.bank.yanki.model.YankiWallet;
 import com.bank.yanki.repository.YankiRepository;
 import com.bank.yanki.service.YankiService;
@@ -15,7 +17,6 @@ import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Service
@@ -23,7 +24,8 @@ import java.time.LocalDateTime;
 public class YankiServiceImpl implements YankiService {
 
     private final YankiRepository repository;
-    private final YankiPaymentProducer producer;
+    private final DebitCardClient debitCardClient;
+    private final AccountTransferProducer transferProducer;
 
     @Override
     public Mono<YankiWallet> create(YankiRequest request) {
@@ -83,30 +85,36 @@ public class YankiServiceImpl implements YankiService {
 
     }
 
-    @Override
     public Mono<Void> transfer(YankiTransferRequest request) {
-        return repository.findByPhoneNumber(request.getOriginPhone())
-                .switchIfEmpty(
-                        Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND, "Sender wallet not found")))
-                .flatMap(sender -> {
-                    if(sender.getDebitCardId() == null){
-                        return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "Sender has no debit card"));
-                    }
 
-                    return repository.findByPhoneNumber(request.getDestinationPhone())
-                            .switchIfEmpty(
-                                    Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND, "Receiver wallet not found")))
-                            .then(Mono.fromRunnable(() -> {
-                                YankiPaymentEvent event = YankiPaymentEvent.builder()
-                                                .debitCardId(sender.getDebitCardId())
-                                                .destinationPhone(request.getDestinationPhone())
-                                                .amount(request.getAmount())
-                                                .description(request.getDescription())
-                                                .date(LocalDateTime.now())
-                                                .build();
-                                producer.sendPayment(event);
-                            }));
+        return Mono.zip(getWalletWithCard(request.getOriginPhone(), "Sender"), getWalletWithCard(request.getDestinationPhone(), "Receiver"))
+                .flatMap(wallets ->
+                        buildTransferEvent(wallets.getT1(), wallets.getT2(), request))
+                .flatMap(transferProducer::sendTransfer);
+    }
+    private Mono<YankiWallet> getWalletWithCard(String phone, String owner) {
+        return repository.findByPhoneNumber(phone)
+                .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND, owner + " wallet not found")))
+                .flatMap(wallet -> {
+                    if (wallet.getDebitCardId() == null) {
+                        return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, owner + " has no debit card"));
+                    }
+                    return Mono.just(wallet);
                 });
+    }
+
+    private Mono<AccountTransferEvent> buildTransferEvent(YankiWallet sender, YankiWallet receiver, YankiTransferRequest request) {
+
+        return Mono.zip(debitCardClient.findById(sender.getDebitCardId()), debitCardClient.findById(receiver.getDebitCardId()))
+                .map(cards -> AccountTransferEvent.builder().sourceAccountId(cards.getT1().getPrimaryAccountId())
+                        .destinationAccountId(cards.getT2().getPrimaryAccountId())
+                        .amount(request.getAmount())
+                        .paymentMethod(PaymentMethod.YANKI)
+                        .description(request.getDescription())
+                        .date(LocalDateTime.now())
+                        .build()
+        );
+
     }
 
     @Override
