@@ -9,7 +9,9 @@ import com.bank.yanki.model.YankiWallet;
 import com.bank.yanki.repository.YankiRepository;
 import com.bank.yanki.service.YankiService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -30,8 +32,7 @@ public class YankiServiceImpl implements YankiService {
                 .flatMap(exists -> {
 
                     if (exists) {
-                        return Mono.error(
-                                new RuntimeException("Phone number already exists"));
+                        return Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND, "Phone number already exists"));
                     }
 
                     YankiWallet wallet =
@@ -72,13 +73,7 @@ public class YankiServiceImpl implements YankiService {
     public Mono<YankiWallet> associateDebitCard(AssociateDebitCardRequest request) {
 
         return repository.findByPhoneNumber(request.getPhoneNumber())
-                .switchIfEmpty(
-                        Mono.error(
-                                new RuntimeException(
-                                        "Wallet not found"
-                                )
-                        )
-                )
+                .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND, "Wallet not found")))
                 .flatMap(wallet -> {
                     wallet.setDebitCardId(request.getDebitCardId());
                     return repository.save(wallet);
@@ -91,15 +86,15 @@ public class YankiServiceImpl implements YankiService {
     public Mono<Void> transfer(YankiTransferRequest request) {
         return repository.findByPhoneNumber(request.getOriginPhone())
                 .switchIfEmpty(
-                        Mono.error(new RuntimeException("Sender wallet not found")))
+                        Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND, "Sender wallet not found")))
                 .flatMap(sender -> {
                     if(sender.getDebitCardId() == null){
-                        return Mono.error(new RuntimeException("Sender has no debit card"));
+                        return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "Sender has no debit card"));
                     }
 
                     return repository.findByPhoneNumber(request.getDestinationPhone())
                             .switchIfEmpty(
-                                    Mono.error(new RuntimeException("Receiver wallet not found")))
+                                    Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND, "Receiver wallet not found")))
                             .then(Mono.fromRunnable(() -> {
                                 YankiPaymentEvent event = YankiPaymentEvent.builder()
                                                 .debitCardId(sender.getDebitCardId())

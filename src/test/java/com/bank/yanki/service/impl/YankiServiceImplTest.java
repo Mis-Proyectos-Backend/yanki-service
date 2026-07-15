@@ -11,6 +11,8 @@ import com.bank.yanki.repository.YankiRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
@@ -87,8 +89,9 @@ class YankiServiceImplTest {
 
         StepVerifier.create(service.create(request))
                 .expectErrorMatches(error ->
-                        error instanceof RuntimeException &&
-                                error.getMessage().equals("Phone number already exists"))
+                        error instanceof ResponseStatusException ex &&
+                                ex.getStatusCode().equals(HttpStatus.NOT_FOUND) &&
+                                ex.getReason().equals("Phone number already exists"))
                 .verify();
 
         verify(repository, never()).save(any());
