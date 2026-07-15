@@ -42,6 +42,7 @@ public class YankiServiceImpl implements YankiService {
                                     .phoneNumber(request.getPhoneNumber())
                                     .imei(request.getImei())
                                     .email(request.getEmail())
+                                    .createdAt(LocalDateTime.now())
                                     .build();
 
                     return repository.save(wallet);

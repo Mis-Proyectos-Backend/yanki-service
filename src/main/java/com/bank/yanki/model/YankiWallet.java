@@ -23,6 +23,10 @@ public class YankiWallet {
     @Id
     private String id;
 
+    /**
+     * Cliente
+     */
+    private String customerId;
 
     /**
      * Tipo de documento:
