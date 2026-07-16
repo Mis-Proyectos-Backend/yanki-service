@@ -135,6 +135,27 @@
 				</executions>
 			</plugin>
 			<plugin>
+				<groupId>org.springdoc</groupId>
+				<artifactId>springdoc-openapi-maven-plugin</artifactId>
+				<version>1.5</version>
+
+				<executions>
+					<execution>
+						<id>generate-openapi</id>
+						<phase>integration-test</phase>
+						<goals>
+							<goal>generate</goal>
+						</goals>
+					</execution>
+				</executions>
+
+				<configuration>
+					<apiDocsUrl>http://localhost:8082/v3/api-docs.yaml</apiDocsUrl>
+					<outputFileName>account-openapi.yml</outputFileName>
+					<outputDir>${project.basedir}/src/main/resources/openapi</outputDir>
+				</configuration>
+			</plugin>
+			<plugin>
 				<groupId>org.jacoco</groupId>
 				<artifactId>jacoco-maven-plugin</artifactId>
 				<version>0.8.12</version>
